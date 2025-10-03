@@ -1,0 +1,16 @@
+ollama:
+  host: http://localhost:11434
+  model: llama3.1  # or llama2, mistral, codellama, etc.
+  temperature: 0.1
+  timeout: 120  # seconds
+
+server:
+  port: 8080
+  host: 0.0.0.0
+  debug: true
+
+agent:
+  max_iterations: 5
+  enable_query_validation: true
+  readonly_mode: false  # Set to true to prevent INSERT/UPDATE/DELETE
+  max_results: 100
