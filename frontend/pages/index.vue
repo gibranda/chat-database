@@ -24,16 +24,48 @@
           </div>
 
           <div class="flex items-center space-x-4">
-            <!-- Backend Status -->
-            <div class="flex items-center space-x-2">
-              <div 
-                class="w-2 h-2 rounded-full"
-                :class="backendConnected ? 'bg-green-500' : 'bg-red-500 pulse-slow'"
-              ></div>
-              <span class="text-sm text-gray-600">
-                {{ backendConnected ? 'Connected' : 'Disconnected' }}
+            <!-- Database Connection Info -->
+            <div v-if="isConnected" class="flex items-center space-x-2 px-3 py-1.5 bg-green-50 rounded-lg border border-green-200">
+              <div class="w-2 h-2 rounded-full bg-green-500"></div>
+              <span class="text-sm text-green-700 font-medium">
+                {{ connectionInfo?.database || 'Connected' }}
               </span>
             </div>
+
+            <!-- Backend Status -->
+            <div v-else class="flex items-center space-x-2">
+              <div 
+                class="w-2 h-2 rounded-full"
+                :class="backendConnected ? 'bg-yellow-500' : 'bg-red-500 pulse-slow'"
+              ></div>
+              <span class="text-sm text-gray-600">
+                {{ backendConnected ? 'No Database' : 'Backend Offline' }}
+              </span>
+            </div>
+
+            <!-- Change Connection Button -->
+            <button
+              v-if="isConnected"
+              @click="handleChangeConnection"
+              class="text-sm text-primary-600 hover:text-primary-800 font-medium flex items-center space-x-1"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+              </svg>
+              <span>Change</span>
+            </button>
+
+            <!-- Disconnect Button -->
+            <button
+              v-if="isConnected"
+              @click="handleDisconnect"
+              class="text-sm text-red-600 hover:text-red-800 font-medium flex items-center space-x-1"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              <span>Disconnect</span>
+            </button>
 
             <!-- Clear Chat Button -->
             <button
@@ -283,6 +315,40 @@ const handleSelectQuery = (query: string) => {
 const handleClearChat = () => {
   if (confirm('Are you sure you want to clear the chat?')) {
     chatStore.clearMessages()
+  }
+}
+
+const handleDisconnect = async () => {
+  if (!confirm('Are you sure you want to disconnect from the database?')) {
+    return
+  }
+
+  const result = await api.disconnect()
+  if (result.success) {
+    // Reset state
+    isConnected.value = false
+    connectionInfo.value = null
+    
+    // Clear stores
+    chatStore.clearMessages()
+    schemaStore.clearSchema()
+    
+    // Show success message
+    console.log('Disconnected successfully')
+  } else {
+    alert('Failed to disconnect: ' + result.error)
+  }
+}
+
+const handleChangeConnection = () => {
+  if (confirm('Disconnect from current database and connect to a new one?')) {
+    // Reset connection state to show modal
+    isConnected.value = false
+    connectionInfo.value = null
+    
+    // Clear stores
+    chatStore.clearMessages()
+    schemaStore.clearSchema()
   }
 }
 

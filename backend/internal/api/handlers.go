@@ -85,6 +85,14 @@ func (h *Handler) Query(c *gin.Context) {
 }
 
 func (h *Handler) GetSchema(c *gin.Context) {
+	// Check if database is connected
+	if h.db == nil || h.agent == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Database not connected. Please connect to a database first.",
+		})
+		return
+	}
+
 	schema, err := h.agent.GetSchema()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -95,6 +103,14 @@ func (h *Handler) GetSchema(c *gin.Context) {
 }
 
 func (h *Handler) RefreshSchema(c *gin.Context) {
+	// Check if database is connected
+	if h.db == nil || h.agent == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Database not connected. Please connect to a database first.",
+		})
+		return
+	}
+
 	if err := h.agent.RefreshSchema(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -104,11 +120,27 @@ func (h *Handler) RefreshSchema(c *gin.Context) {
 }
 
 func (h *Handler) ClearHistory(c *gin.Context) {
+	// Check if agent is initialized
+	if h.agent == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Database not connected. Please connect to a database first.",
+		})
+		return
+	}
+
 	h.agent.ClearHistory()
 	c.JSON(http.StatusOK, gin.H{"message": "Conversation history cleared"})
 }
 
 func (h *Handler) GetTables(c *gin.Context) {
+	// Check if database is connected
+	if h.db == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Database not connected. Please connect to a database first.",
+		})
+		return
+	}
+
 	tables, err := h.db.GetTables()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -119,6 +151,14 @@ func (h *Handler) GetTables(c *gin.Context) {
 }
 
 func (h *Handler) GetTableInfo(c *gin.Context) {
+	// Check if database is connected
+	if h.db == nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Database not connected. Please connect to a database first.",
+		})
+		return
+	}
+
 	tableName := c.Param("table")
 	if tableName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "table name is required"})

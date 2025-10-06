@@ -270,11 +270,20 @@ func (d *Database) getRowCount(tableName string) (int64, error) {
 }
 
 func (d *Database) ExecuteQuery(query string, maxResults int) (*QueryResult, error) {
+	// Clean and prepare query
+	query = strings.TrimSpace(query)
+	
+	// Remove trailing semicolon if present
+	query = strings.TrimRight(query, ";")
+	
 	// Add LIMIT if not present
-	upperQuery := strings.ToUpper(strings.TrimSpace(query))
+	upperQuery := strings.ToUpper(query)
 	if !strings.Contains(upperQuery, "LIMIT") && maxResults > 0 {
 		query = fmt.Sprintf("%s LIMIT %d", query, maxResults)
 	}
+	
+	// Add semicolon back at the end
+	query = query + ";"
 
 	rows, err := d.db.Query(query)
 	if err != nil {

@@ -120,6 +120,32 @@ export const useApi = () => {
     }
   }
 
+  const disconnect = async () => {
+    try {
+      const response = await $fetch(`${apiBase}/connection/disconnect`, {
+        method: 'POST'
+      })
+      return { success: true, data: response }
+    } catch (error: any) {
+      return { 
+        success: false, 
+        error: error.message || 'Failed to disconnect' 
+      }
+    }
+  }
+
+  const getConnectionStatus = async () => {
+    try {
+      const response = await $fetch(`${apiBase}/connection/status`)
+      return { success: true, data: response }
+    } catch (error: any) {
+      return { 
+        success: false, 
+        error: error.message || 'Failed to get connection status' 
+      }
+    }
+  }
+
   return {
     checkHealth,
     sendQuery,
@@ -129,6 +155,8 @@ export const useApi = () => {
     getTableInfo,
     clearHistory,
     testConnection,
-    connect
+    connect,
+    disconnect,
+    getConnectionStatus
   }
 }

@@ -27,6 +27,8 @@ func SetupRouter(handler *Handler, debug bool) *gin.Engine {
 		// Connection management
 		api.POST("/connection/test", handler.TestConnection)
 		api.POST("/connection/connect", handler.Connect)
+		api.POST("/connection/disconnect", handler.Disconnect)
+		api.GET("/connection/status", handler.GetConnectionStatus)
 		
 		// Query and schema
 		api.POST("/query", handler.Query)

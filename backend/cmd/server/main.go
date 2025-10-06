@@ -44,11 +44,13 @@ func main() {
 	log.Printf("🤖 LLM Model: %s\n", cfg.Ollama.Model)
 	log.Printf("📊 Database: Not connected (waiting for UI input)\n")
 	log.Println("\nEndpoints:")
-	log.Println("  POST   /api/connection/test    - Test database connection")
-	log.Println("  POST   /api/connection/connect - Connect to database")
-	log.Println("  POST   /api/query              - Ask questions in natural language")
-	log.Println("  GET    /api/schema             - Get database schema")
-	log.Println("  GET    /api/health             - Health check")
+	log.Println("  POST   /api/connection/test       - Test database connection")
+	log.Println("  POST   /api/connection/connect    - Connect to database")
+	log.Println("  POST   /api/connection/disconnect - Disconnect from database")
+	log.Println("  GET    /api/connection/status     - Get connection status")
+	log.Println("  POST   /api/query                 - Ask questions in natural language")
+	log.Println("  GET    /api/schema                - Get database schema")
+	log.Println("  GET    /api/health                - Health check")
 	log.Println()
 
 	if err := router.Run(addr); err != nil {

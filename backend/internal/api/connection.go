@@ -112,6 +112,41 @@ func (h *Handler) Connect(c *gin.Context) {
 	})
 }
 
+func (h *Handler) Disconnect(c *gin.Context) {
+	// Close database connection if exists
+	if h.db != nil {
+		h.db.Close()
+		h.db = nil
+		log.Println("✓ Database disconnected")
+	}
+
+	// Clear agent
+	h.agent = nil
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Disconnected successfully",
+	})
+}
+
+func (h *Handler) GetConnectionStatus(c *gin.Context) {
+	connected := h.db != nil && h.agent != nil
+	
+	response := gin.H{
+		"connected": connected,
+	}
+
+	if connected {
+		// Try to get database info
+		tables, err := h.db.GetTables()
+		if err == nil {
+			response["tables"] = len(tables)
+		}
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
 func buildConnectionString(req ConnectionRequest) string {
 	switch req.Type {
 	case "postgres":

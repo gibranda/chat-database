@@ -13,6 +13,7 @@ vendor/
 backend/config.yaml
 backend/tmp/
 backend/*.db
+backend/build-errors.log
 
 # Python
 __pycache__/

@@ -179,6 +179,8 @@ ollama pull llama3.1
 
 ### Langkah 4: Jalankan Aplikasi
 
+#### Mode Production
+
 **Terminal 1 - Backend:**
 ```bash
 ./start-backend.sh
@@ -189,12 +191,34 @@ ollama pull llama3.1
 ./start-frontend.sh
 ```
 
+#### Mode Development (dengan Hot Reloading) 🔥
+
+**Terminal 1 - Backend dengan Hot Reload:**
+```bash
+./dev-backend.sh
+```
+
+Script ini akan:
+- ✅ Auto-install `air` jika belum ada
+- ✅ Watch perubahan di file `.go` dan `.yaml`
+- ✅ Auto-reload server saat ada perubahan
+- ✅ Menampilkan build errors secara real-time
+
+**Terminal 2 - Frontend:**
+```bash
+./start-frontend.sh  # Nuxt sudah support hot reload by default
+```
+
 **Atau manual:**
 
 ```bash
-# Backend
+# Backend (tanpa hot reload)
 cd backend
 go run cmd/server/main.go
+
+# Backend (dengan hot reload)
+cd backend
+air  # pastikan air sudah terinstall
 
 # Frontend (terminal baru)
 cd frontend
@@ -384,6 +408,45 @@ export NUXT_PUBLIC_API_URL=http://localhost:8080
 
 ## 🔧 Development
 
+### Hot Reloading Setup 🔥
+
+Untuk development yang lebih produktif, gunakan hot reloading:
+
+#### Backend Hot Reload (Air)
+
+**Install Air:**
+```bash
+go install github.com/air-verse/air@latest
+```
+
+**Jalankan dengan hot reload:**
+```bash
+./dev-backend.sh
+# atau
+cd backend && air
+```
+
+**Konfigurasi Air** (sudah tersedia di `backend/.air.toml`):
+- Watch file: `*.go`, `*.yaml`, `*.yml`
+- Exclude: `*_test.go`, `tmp/`, `vendor/`
+- Auto rebuild on file changes
+- Build errors ditampilkan real-time
+
+#### Frontend Hot Reload (Nuxt)
+
+Frontend sudah support hot reload by default:
+```bash
+./start-frontend.sh
+# atau
+cd frontend && npm run dev
+```
+
+**Fitur Hot Reload:**
+- ✅ Component auto-reload
+- ✅ CSS hot update
+- ✅ State preservation
+- ✅ Fast refresh
+
 ### Project Structure
 
 ```
@@ -396,6 +459,7 @@ chat-with-database/
 │   │   ├── database/      # DB abstraction
 │   │   ├── llm/           # LLM client
 │   │   └── config/        # Configuration
+│   ├── .air.toml          # Air hot reload config
 │   ├── config.yaml        # Backend config
 │   └── go.mod             # Go dependencies
 │
@@ -408,7 +472,8 @@ chat-with-database/
 │   └── nuxt.config.ts     # Nuxt configuration
 │
 ├── setup.sh               # Auto setup script
-├── start-backend.sh       # Backend starter
+├── start-backend.sh       # Backend starter (production)
+├── dev-backend.sh         # Backend starter (development + hot reload)
 ├── start-frontend.sh      # Frontend starter
 └── README.md              # This file
 ```
