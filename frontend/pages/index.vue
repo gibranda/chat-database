@@ -84,16 +84,16 @@
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <!-- Sidebar -->
-        <aside class="lg:col-span-1 space-y-4 h-[calc(100vh-10rem)] overflow-y-auto">
+        <aside class="lg:col-span-1 space-y-4">
           <SchemaExplorer />
           <QueryHistory @select-query="handleSelectQuery" />
         </aside>
 
         <!-- Chat Area -->
         <main class="lg:col-span-3">
-          <div class="card h-[calc(100vh-10rem)] flex flex-col">
+          <div class="card flex flex-col">
             <!-- Welcome Message -->
-            <div v-if="chatStore.messageCount === 0" class="flex-1 flex items-center justify-center overflow-y-auto">
+            <div v-if="chatStore.messageCount === 0" class="flex-1 flex items-center justify-center">
               <div class="text-center max-w-2xl px-4">
                 <div class="w-20 h-20 bg-gradient-primary rounded-2xl flex items-center justify-center mx-auto mb-6">
                   <svg class="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -127,7 +127,7 @@
             </div>
 
             <!-- Messages -->
-            <div v-else class="flex-1 overflow-y-auto mb-4 space-y-4 px-2" ref="messagesContainer">
+            <div v-else class="flex-1 mb-4 space-y-4 px-2" ref="messagesContainer">
               <ChatMessage 
                 v-for="message in chatStore.messages" 
                 :key="message.id"
@@ -353,8 +353,17 @@ const handleChangeConnection = () => {
 }
 
 const scrollToBottom = () => {
-  if (messagesContainer.value) {
-    messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
+  const el = messagesContainer.value
+  if (el) {
+    // If the container has its own scrollbar, use it
+    if (el.scrollHeight > el.clientHeight) {
+      el.scrollTop = el.scrollHeight
+      return
+    }
+  }
+  // Otherwise, scroll the window (page-level scroll)
+  if (typeof window !== 'undefined') {
+    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' })
   }
 }
 

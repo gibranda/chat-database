@@ -36,25 +36,32 @@
     </div>
 
     <!-- Table -->
-    <div class="overflow-x-auto max-h-96">
+    <div class="overflow-x-auto overflow-y-auto max-h-[60vh]">
       <table class="min-w-full divide-y divide-gray-200">
         <thead class="bg-gray-50 sticky top-0">
           <tr>
             <th 
               v-for="column in results.columns" 
               :key="column"
-              class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-b-2 border-primary-200"
+              :aria-sort="sortKey === column ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'"
+              @click="toggleSort(column)"
+              class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider border-b-2 border-primary-200 cursor-pointer select-none"
             >
-              {{ column }}
+              <span class="inline-flex items-center gap-1">
+                {{ column }}
+                <svg v-if="sortKey === column" :class="['w-3.5 h-3.5', sortDir === 'desc' ? 'rotate-180' : '']" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M19 9l-7 7-7-7" />
+                </svg>
+              </span>
             </th>
           </tr>
         </thead>
         <tbody class="bg-white divide-y divide-gray-200">
           <tr 
-            v-for="(row, idx) in results.rows" 
-            :key="idx" 
+            v-for="(row, idx) in displayedRows" 
+            :key="startIndex + idx" 
             class="hover:bg-primary-50 transition-colors"
-            :class="{ 'bg-gray-50': idx % 2 === 1 }"
+            :class="{ 'bg-gray-50': (startIndex + idx) % 2 === 1 }"
           >
             <td 
               v-for="column in results.columns" 
@@ -70,11 +77,26 @@
       </table>
     </div>
 
-    <!-- Footer with additional info -->
-    <div v-if="results.count > 10" class="px-4 py-2 bg-gray-50 border-t border-gray-200">
-      <p class="text-xs text-gray-600 text-center">
-        Showing {{ Math.min(results.count, results.rows.length) }} of {{ results.count }} rows
-      </p>
+    <!-- Footer: Pagination Controls -->
+    <div class="px-4 py-2 bg-gray-50 border-t border-gray-200 flex items-center justify-between flex-wrap gap-2">
+      <div class="text-xs text-gray-600">
+        Showing {{ results.rows.length === 0 ? 0 : (startIndex + 1) }}–{{ endIndex }} of {{ results.rows.length }} rows
+      </div>
+      <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2 text-xs">
+          <span class="text-gray-600">Rows per page</span>
+          <select v-model.number="pageSize" class="border border-gray-300 rounded px-2 py-1 text-xs bg-white">
+            <option v-for="s in pageSizes" :key="s" :value="s">{{ s }}</option>
+          </select>
+        </div>
+        <div class="flex items-center gap-1">
+          <button @click="firstPage" :disabled="page <= 1" class="px-2 py-1 text-xs border rounded disabled:opacity-50">«</button>
+          <button @click="prevPage" :disabled="page <= 1" class="px-2 py-1 text-xs border rounded disabled:opacity-50">‹</button>
+          <span class="text-xs text-gray-700 px-2">Page {{ page }} of {{ totalPages }}</span>
+          <button @click="nextPage" :disabled="page >= totalPages" class="px-2 py-1 text-xs border rounded disabled:opacity-50">›</button>
+          <button @click="lastPage" :disabled="page >= totalPages" class="px-2 py-1 text-xs border rounded disabled:opacity-50">»</button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -85,6 +107,93 @@ import type { QueryResult } from '~/stores/chat'
 const props = defineProps<{
   results: QueryResult
 }>()
+
+// Sorting state
+const sortKey = ref<string | null>(null)
+const sortDir = ref<'asc' | 'desc' | null>(null)
+
+const toggleSort = (column: string) => {
+  if (sortKey.value !== column) {
+    sortKey.value = column
+    sortDir.value = 'asc'
+  } else if (sortDir.value === 'asc') {
+    sortDir.value = 'desc'
+  } else if (sortDir.value === 'desc') {
+    // cycle to none
+    sortKey.value = null
+    sortDir.value = null
+  } else {
+    sortDir.value = 'asc'
+  }
+}
+
+const compareValues = (a: any, b: any) => {
+  // Nulls last in asc
+  const isNullA = a === null || a === undefined
+  const isNullB = b === null || b === undefined
+  if (isNullA && !isNullB) return 1
+  if (!isNullA && isNullB) return -1
+  if (isNullA && isNullB) return 0
+
+  // Numbers (include numeric strings)
+  const numA = typeof a === 'number' ? a : (typeof a === 'string' && a.trim() !== '' && !isNaN(Number(a)) ? Number(a) : null)
+  const numB = typeof b === 'number' ? b : (typeof b === 'string' && b.trim() !== '' && !isNaN(Number(b)) ? Number(b) : null)
+  if (numA !== null && numB !== null) {
+    return numA === numB ? 0 : (numA < numB ? -1 : 1)
+  }
+
+  // Dates
+  const dateA = typeof a === 'string' ? Date.parse(a) : NaN
+  const dateB = typeof b === 'string' ? Date.parse(b) : NaN
+  if (!isNaN(dateA) && !isNaN(dateB)) {
+    return dateA === dateB ? 0 : (dateA < dateB ? -1 : 1)
+  }
+
+  // Booleans
+  if (typeof a === 'boolean' && typeof b === 'boolean') {
+    return a === b ? 0 : (a ? 1 : -1)
+  }
+
+  // Fallback string compare
+  const sa = String(a).toLocaleLowerCase()
+  const sb = String(b).toLocaleLowerCase()
+  return sa === sb ? 0 : (sa < sb ? -1 : 1)
+}
+
+const sortedRows = computed(() => {
+  const rows = props.results?.rows || []
+  if (!sortKey.value || !sortDir.value) return rows
+  const key = sortKey.value
+  const dir = sortDir.value
+  const arr = rows.slice()
+  arr.sort((r1, r2) => {
+    const cmp = compareValues((r1 as any)[key], (r2 as any)[key])
+    return dir === 'asc' ? cmp : -cmp
+  })
+  return arr
+})
+
+// Pagination state
+const page = ref(1)
+const pageSizes = [10, 25, 50, 100]
+const pageSize = ref(25)
+
+const rowCount = computed(() => props.results?.rows?.length || 0)
+const totalPages = computed(() => Math.max(1, Math.ceil(rowCount.value / pageSize.value)))
+const startIndex = computed(() => Math.min((page.value - 1) * pageSize.value, Math.max(0, rowCount.value - 1)))
+const endIndex = computed(() => Math.min(startIndex.value + pageSize.value, rowCount.value))
+const displayedRows = computed(() => sortedRows.value.slice(startIndex.value, endIndex.value))
+
+// Navigation handlers
+const firstPage = () => (page.value = 1)
+const prevPage = () => (page.value = Math.max(1, page.value - 1))
+const nextPage = () => (page.value = Math.min(totalPages.value, page.value + 1))
+const lastPage = () => (page.value = totalPages.value)
+
+// Reset page when results or page size changes
+watch(() => props.results, () => { page.value = 1 })
+watch(pageSize, () => { page.value = 1 })
+watch([sortKey, sortDir], () => { page.value = 1 })
 
 const formatValue = (value: any) => {
   if (value === null || value === undefined) {

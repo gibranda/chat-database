@@ -327,6 +327,29 @@ func (d *Database) ExecuteQuery(query string, maxResults int) (*QueryResult, err
 	}, nil
 }
 
+// ExplainQuery validates the query structure without executing it by using EXPLAIN.
+// This catches missing tables/columns and other structural issues early.
+func (d *Database) ExplainQuery(query string) error {
+    q := strings.TrimSpace(query)
+    q = strings.TrimRight(q, ";")
+
+    var explain string
+    switch d.dbType {
+    case "sqlite3":
+        explain = fmt.Sprintf("EXPLAIN QUERY PLAN %s;", q)
+    default:
+        // postgres, mysql
+        explain = fmt.Sprintf("EXPLAIN %s;", q)
+    }
+
+    rows, err := d.db.Query(explain)
+    if err != nil {
+        return fmt.Errorf("invalid query: %w", err)
+    }
+    defer rows.Close()
+    return nil
+}
+
 func (d *Database) GetFullSchema() (*SchemaInfo, error) {
 	tables, err := d.GetTables()
 	if err != nil {

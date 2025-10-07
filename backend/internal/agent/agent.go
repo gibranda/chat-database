@@ -1,22 +1,23 @@
 package agent
 
 import (
-	"encoding/json"
-	"fmt"
-	"strings"
-
-	"github.com/gibranda/chat-with-database/internal/database"
-	"github.com/gibranda/chat-with-database/internal/llm"
+    "encoding/json"
+    "fmt"
+    "regexp"
+    "sort"
+    "strings"
+    "github.com/gibranda/chat-with-database/internal/database"
+    "github.com/gibranda/chat-with-database/internal/llm"
 )
 
 type Agent struct {
-	llm                   *llm.OllamaClient
-	db                    *database.Database
-	maxIterations         int
-	enableQueryValidation bool
-	readonlyMode          bool
-	maxResults            int
-	conversationHistory   []llm.ChatMessage
+    llm                   *llm.OllamaClient
+    db                    *database.Database
+    maxIterations         int
+    enableQueryValidation bool
+    readonlyMode          bool
+    maxResults            int
+    conversationHistory   []llm.ChatMessage
 	schemaCache           *database.SchemaInfo
 }
 
@@ -148,34 +149,79 @@ func (a *Agent) ProcessQuery(question string) (*AgentResponse, error) {
 		Thought:     "Generated SQL query",
 	})
 
-	// Step 4: Validate SQL
-	if a.enableQueryValidation {
-		if err := a.db.ValidateSQL(sql); err != nil {
-			response.Error = fmt.Sprintf("SQL validation failed: %v", err)
-			return response, nil
-		}
+    // Step 4: Security/readonly validation
+    if a.enableQueryValidation {
+        if err := a.db.ValidateSQL(sql); err != nil {
+            response.Error = fmt.Sprintf("SQL validation failed: %v", err)
+            return response, nil
+        }
 
-		if a.readonlyMode {
-			isReadOnly := a.db.IsReadOnlyQuery(sql)
-			fmt.Printf("Readonly mode check: SQL=%s, IsReadOnly=%v\n", sql[:min(50, len(sql))], isReadOnly)
-			if !isReadOnly {
-				response.Error = "Only read-only queries are allowed in readonly mode"
+        if a.readonlyMode {
+            isReadOnly := a.db.IsReadOnlyQuery(sql)
+            preview := sql
+            if len(preview) > 80 {
+                preview = preview[:80]
+            }
+            fmt.Printf("Readonly mode check: SQL=%s..., IsReadOnly=%v\n", preview, isReadOnly)
+            if !isReadOnly {
+                response.Error = "Only read-only queries are allowed in readonly mode"
+                return response, nil
+            }
+        }
+
+        response.Reasoning = append(response.Reasoning, ReasoningStep{
+            Step:        4,
+            Action:      "validate_sql",
+            Observation: "SQL validation passed",
+            Thought:     "Query is safe to execute",
+        })
+    }
+
+	// Step 4.5: Pre-validate SQL structure with EXPLAIN to catch missing tables/columns
+	if err := a.db.ExplainQuery(sql); err != nil {
+		response.Reasoning = append(response.Reasoning, ReasoningStep{
+			Step:        len(response.Reasoning) + 1,
+			Action:      "pre_validate_sql",
+			Observation: fmt.Sprintf("EXPLAIN failed: %v", err),
+			Thought:     "Attempting to auto-fix SQL before execution",
+		})
+
+		fixedSQL, fixErr := a.fixQuery(sql, err.Error(), question)
+		if fixErr == nil && strings.TrimSpace(fixedSQL) != "" && fixedSQL != sql {
+			// Optional: run validation again if enabled
+			if a.enableQueryValidation {
+				if vErr := a.db.ValidateSQL(fixedSQL); vErr != nil {
+					response.Error = fmt.Sprintf("SQL validation failed after fix: %v", vErr)
+					response.SQL = fixedSQL
+					return response, nil
+				}
+			}
+			// Pre-validate the fixed SQL
+			if eErr := a.db.ExplainQuery(fixedSQL); eErr != nil {
+				response.Error = fmt.Sprintf("SQL pre-validation failed after fix: %v", eErr)
+				response.SQL = fixedSQL
 				return response, nil
 			}
-		}
 
-		response.Reasoning = append(response.Reasoning, ReasoningStep{
-			Step:        4,
-			Action:      "validate_sql",
-			Observation: "SQL validation passed",
-			Thought:     "Query is safe to execute",
-		})
+			response.Reasoning = append(response.Reasoning, ReasoningStep{
+				Step:        len(response.Reasoning) + 1,
+				Action:      "fix_sql_using_explain",
+				Observation: "Query fixed and validated via EXPLAIN",
+				Thought:     "Proceeding with corrected query",
+			})
+			sql = fixedSQL
+			response.SQL = fixedSQL
+		} else {
+			response.Error = fmt.Sprintf("SQL pre-validation failed: %v. %s", err, a.generateHints(sql, err.Error()))
+			return response, nil
+		}
 	}
 
 	// Step 5: Execute query
 	results, err := a.db.ExecuteQuery(sql, a.maxResults)
 	if err != nil {
 		// Try to fix the query
+		// attempt LLM fix
 		fixedSQL, fixErr := a.fixQuery(sql, err.Error(), question)
 		if fixErr == nil {
 			results, err = a.db.ExecuteQuery(fixedSQL, a.maxResults)
@@ -191,7 +237,7 @@ func (a *Agent) ProcessQuery(question string) (*AgentResponse, error) {
 		}
 		
 		if err != nil {
-			response.Error = fmt.Sprintf("Query execution failed: %v", err)
+			response.Error = fmt.Sprintf("Query execution failed: %v. %s", err, a.generateHints(sql, err.Error()))
 			return response, nil
 		}
 	}
@@ -475,5 +521,137 @@ func (a *Agent) RefreshSchema() error {
 }
 
 func (a *Agent) ClearHistory() {
-	a.conversationHistory = make([]llm.ChatMessage, 0)
+    a.conversationHistory = make([]llm.ChatMessage, 0)
+}
+
+// generateHints attempts to provide user-friendly suggestions based on the schema
+// when an SQL error occurs (e.g., missing column/table).
+func (a *Agent) generateHints(sql, errMsg string) string {
+    if a.schemaCache == nil {
+        return ""
+    }
+
+    // Try to extract problematic identifier
+    // Examples:
+    //  - pq: column m.council_id does not exist
+    //  - ERROR 1054 (42S22): Unknown column 'foo' in 'field list'
+    //  - relation "bar" does not exist
+    reCol := regexp.MustCompile(`(?i)(column|unknown column)\s+"?([a-zA-Z0-9_\.]+)"?\s+(does not exist|in 'field list')`)
+    reRel := regexp.MustCompile(`(?i)(relation|table)\s+"?([a-zA-Z0-9_\.]+)"?\s+(does not exist|doesn't exist|not found)`)
+
+    // Candidate suggestions collector
+    type cand struct {
+        name  string
+        score int // lower is better (edit distance)
+    }
+
+    var suggestions []cand
+    addColumnSuggestions := func(col string) {
+        // strip alias if any
+        parts := strings.Split(col, ".")
+        wanted := parts[len(parts)-1]
+        wantedLower := strings.ToLower(wanted)
+        for _, t := range a.schemaCache.Tables {
+            for _, c := range t.Columns {
+                colLower := strings.ToLower(c.Name)
+                // quick filter
+                if strings.Contains(colLower, wantedLower) || strings.HasPrefix(colLower, wantedLower) || strings.HasPrefix(wantedLower, colLower) {
+                    suggestions = append(suggestions, cand{name: fmt.Sprintf("%s.%s", t.Name, c.Name), score: 0})
+                    continue
+                }
+                // fallback distance
+                d := levenshtein(wantedLower, colLower)
+                if d <= 3 { // small typo tolerance
+                    suggestions = append(suggestions, cand{name: fmt.Sprintf("%s.%s", t.Name, c.Name), score: d})
+                }
+            }
+        }
+    }
+
+    addTableSuggestions := func(tab string) {
+        wanted := strings.ToLower(tab)
+        for _, t := range a.schemaCache.Tables {
+            nameLower := strings.ToLower(t.Name)
+            if strings.Contains(nameLower, wanted) || strings.HasPrefix(nameLower, wanted) || strings.HasPrefix(wanted, nameLower) {
+                suggestions = append(suggestions, cand{name: t.Name, score: 0})
+                continue
+            }
+            d := levenshtein(wanted, nameLower)
+            if d <= 3 {
+                suggestions = append(suggestions, cand{name: t.Name, score: d})
+            }
+        }
+    }
+
+    if m := reCol.FindStringSubmatch(errMsg); len(m) >= 3 {
+        missing := m[2]
+        addColumnSuggestions(missing)
+        if len(suggestions) > 0 {
+            sort.Slice(suggestions, func(i, j int) bool { return suggestions[i].score < suggestions[j].score })
+            if len(suggestions) > 5 {
+                suggestions = suggestions[:5]
+            }
+            names := make([]string, 0, len(suggestions))
+            for _, s := range suggestions {
+                names = append(names, s.name)
+            }
+            return fmt.Sprintf("Hint: Kolom '%s' tidak ditemukan. Mungkin maksud Anda: %s", missing, strings.Join(names, ", "))
+        }
+    }
+
+    if m := reRel.FindStringSubmatch(errMsg); len(m) >= 3 {
+        missing := m[2]
+        addTableSuggestions(missing)
+        if len(suggestions) > 0 {
+            sort.Slice(suggestions, func(i, j int) bool { return suggestions[i].score < suggestions[j].score })
+            if len(suggestions) > 5 {
+                suggestions = suggestions[:5]
+            }
+            names := make([]string, 0, len(suggestions))
+            for _, s := range suggestions {
+                names = append(names, s.name)
+            }
+            return fmt.Sprintf("Hint: Tabel/relasi '%s' tidak ditemukan. Mungkin maksud Anda: %s", missing, strings.Join(names, ", "))
+        }
+    }
+
+    return ""
+}
+
+// Simple Levenshtein distance for small strings
+func levenshtein(a, b string) int {
+    la := len(a)
+    lb := len(b)
+    if la == 0 {
+        return lb
+    }
+    if lb == 0 {
+        return la
+    }
+    d := make([][]int, la+1)
+    for i := 0; i <= la; i++ {
+        d[i] = make([]int, lb+1)
+        d[i][0] = i
+    }
+    for j := 0; j <= lb; j++ {
+        d[0][j] = j
+    }
+    for i := 1; i <= la; i++ {
+        for j := 1; j <= lb; j++ {
+            cost := 0
+            if a[i-1] != b[j-1] {
+                cost = 1
+            }
+            del := d[i-1][j] + 1
+            ins := d[i][j-1] + 1
+            sub := d[i-1][j-1] + cost
+            d[i][j] = minInt(del, minInt(ins, sub))
+        }
+    }
+    return d[la][lb]
+}
+
+func minInt(a, b int) int {
+    if a < b { return a }
+    return b
 }

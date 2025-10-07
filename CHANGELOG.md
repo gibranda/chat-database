@@ -19,7 +19,10 @@
   - Boolean values dengan color coding (green/red)
   - Alternating row colors untuk readability
 - **Sticky Header**: Table header tetap visible saat scroll
-- **Footer Info**: Menampilkan "Showing X of Y rows" jika data > 10 rows
+- **Table-only Vertical Scroll**: Scroll vertikal kini hanya di tabel (max 60vh), bukan seluruh chat message
+- **Client-side Pagination**: Navigasi halaman (10/25/50/100 rows per page) dengan info halaman
+- **Column Sorting**: Klik header kolom untuk sort asc/desc (cycle asc → desc → none)
+- **Footer Info**: Menampilkan jumlah baris yang ditampilkan vs total
 
 #### Reasoning Steps
 - **Compact Design**: Button-style toggle dengan step count badge
@@ -68,11 +71,13 @@
 
 ## Next Steps
 
-- [ ] Add pagination untuk large result sets
+- [x] Add pagination untuk large result sets
 - [ ] Add data visualization charts
 - [ ] Implement query caching
 - [ ] Add user authentication
+- [ ] Add user registration
 - [ ] Support for multiple database connections
 - [ ] Export results to Excel/PDF
 - [ ] Query performance metrics
 - [ ] Advanced filtering and sorting in results table
+- [ ] Server-side pagination/virtualization untuk result set yang sangat besar
